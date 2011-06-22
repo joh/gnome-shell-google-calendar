@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from time import mktime
+from getpass import getpass
 
 import gtk
 import dbus
@@ -9,6 +10,8 @@ import dbus.service
 import dbus.mainloop.glib
 from gdata.calendar.service import CalendarService, CalendarEventQuery
 import iso8601
+
+import keyring
 
 class Event(object):
     def __init__(self, event_id, title, start_time, end_time, allday=False):
@@ -25,27 +28,18 @@ class CalendarServer(dbus.service.Object):
     busname = 'org.gnome.Shell.CalendarServer'
     object_path = '/org/gnome/Shell/CalendarServer'
     
-    def __init__(self, email, password):
+    def __init__(self, client):
         bus = dbus.service.BusName(self.busname,
                                         bus=dbus.SessionBus(),
                                         replace_existing=True)
 
         super(CalendarServer, self).__init__(bus, self.object_path)
         
-        self.client = CalendarService()
-        self.client.email = email
-        self.client.password = password
-        
-        self.authenticate()
-        
+        self.client = client
         self.calendars = self.get_calendars()
         
         # Events indexed by (since, until)
         self.events = {}
-    
-    def authenticate(self):
-        self.client.source = 'github-gnome_shell_google_calendar-0.1'
-        self.client.ProgrammaticLogin()
     
     def get_calendars(self):
         feed = self.client.GetAllCalendarsFeed()
@@ -162,8 +156,46 @@ class CalendarServer(dbus.service.Object):
         
         return events
 
+
+def login(email, password):
+    client = CalendarService()
+    client.email = email
+    client.password = password
+    client.source = 'github-gnome_shell_google_calendar-0.1'
+    client.ProgrammaticLogin()
+    
+    return client
+
+
+def login_prompt():
+    print 'Please enter your Google Calendar login information.'
+    print 'The email and password will be stored securely in your keyring.'
+    email = raw_input('E-mail: ')
+    password = getpass('Password: ')
+    
+    return email, password
+
+
 if __name__ == '__main__':
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-
-    myserver = CalendarServer('email', 'password')
+    
+    # Get credentials
+    try:
+        email, password = keyring.get_credentials()
+    except keyring.KeyringError:
+        email, password = login_prompt()
+        keyring.set_credentials(email, password)
+    
+    # Login
+    client = None
+    while not client:
+        try:
+            print "Logging in as '%s'..." % email
+            client = login(email, password)
+        except Exception as e:
+            print '%s.' % e
+            email, password = login_prompt()
+            keyring.set_credentials(email, password)
+    
+    myserver = CalendarServer(client)
     gtk.main()
