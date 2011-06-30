@@ -45,14 +45,19 @@ class CalendarServer(dbus.service.Object):
         feed = self.client.GetAllCalendarsFeed()
         
         calendars = []
+        urls = set()
         
         print feed.title.text + ':'
         
         for calendar in feed.entry:
-            print '  ', calendar.title.text
-            print '    ', calendar.content.src
+            title = calendar.title.text
+            url = calendar.content.src
             
-            calendars.append((calendar.title.text, calendar.content.src))
+            if not url in urls:
+                print '  ', title
+                print '    ', url
+                urls.add(url)
+                calendars.append((title, url))
         
         return calendars
     
